@@ -1,2 +1,0 @@
-# chord-extractor
-chord-extractor
