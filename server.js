@@ -5,27 +5,32 @@ import os from "os";
 import path from "path";
 import crypto from "crypto";
 
+
 const app = express();
 
 app.use(express.json());
+
 
 const MAX_DURATION_SECONDS = 600;
 
 
 // ===============================
-// Health check
+// Health
 // ===============================
 
 app.get("/", (req, res) => {
+
     res.json({
         status: "ok",
         service: "chord-extractor-backend"
     });
+
 });
 
 
+
 // ===============================
-// Cookie support
+// Cookie handling
 // ===============================
 
 function getCookieFile() {
@@ -35,7 +40,8 @@ function getCookieFile() {
     }
 
 
-    const cookiePath = "/tmp/youtube-cookies.txt";
+    const cookiePath =
+        "/tmp/youtube-cookies.txt";
 
 
     fs.writeFileSync(
@@ -45,6 +51,7 @@ function getCookieFile() {
 
 
     return cookiePath;
+
 }
 
 
@@ -59,12 +66,22 @@ function runYtDlpJson(url) {
 
 
         const args = [
+
             "-J",
-            "--no-playlist"
+
+            "--no-playlist",
+
+            "--js-runtimes",
+
+            "deno"
+
         ];
 
 
-        const cookies = getCookieFile();
+
+        const cookies =
+            getCookieFile();
+
 
 
         if (cookies) {
@@ -77,33 +94,42 @@ function runYtDlpJson(url) {
         }
 
 
+
         args.push(url);
 
 
 
-        const proc = spawn(
-            "yt-dlp",
-            args
-        );
+        const proc =
+            spawn(
+                "yt-dlp",
+                args
+            );
+
 
 
         let data = "";
+
         let error = "";
 
 
 
         proc.stdout.on(
             "data",
-            (d) => {
-                data += d.toString();
+            chunk => {
+
+                data += chunk.toString();
+
             }
         );
 
 
+
         proc.stderr.on(
             "data",
-            (d) => {
-                error += d.toString();
+            chunk => {
+
+                error += chunk.toString();
+
             }
         );
 
@@ -111,13 +137,13 @@ function runYtDlpJson(url) {
 
         proc.on(
             "close",
-            (code) => {
+            code => {
 
 
                 if (code !== 0) {
 
+
                     console.error(
-                        "YT-DLP METADATA ERROR:",
                         error
                     );
 
@@ -136,7 +162,9 @@ function runYtDlpJson(url) {
                         JSON.parse(data)
                     );
 
-                } catch {
+                }
+
+                catch {
 
                     reject(
                         new Error(
@@ -145,6 +173,7 @@ function runYtDlpJson(url) {
                     );
 
                 }
+
 
             }
         );
@@ -156,8 +185,9 @@ function runYtDlpJson(url) {
 
 
 
+
 // ===============================
-// yt-dlp download
+// yt-dlp audio download
 // ===============================
 
 function runYtDlpDownload(
@@ -179,13 +209,17 @@ function runYtDlpDownload(
             "--audio-quality",
             "5",
 
-            "--no-playlist"
+            "--no-playlist",
+
+            "--js-runtimes",
+            "deno"
 
         ];
 
 
 
-        const cookies = getCookieFile();
+        const cookies =
+            getCookieFile();
 
 
 
@@ -208,10 +242,11 @@ function runYtDlpDownload(
 
 
 
-        const proc = spawn(
-            "yt-dlp",
-            args
-        );
+        const proc =
+            spawn(
+                "yt-dlp",
+                args
+            );
 
 
 
@@ -221,8 +256,10 @@ function runYtDlpDownload(
 
         proc.stderr.on(
             "data",
-            (d) => {
-                error += d.toString();
+            chunk => {
+
+                error += chunk.toString();
+
             }
         );
 
@@ -230,18 +267,19 @@ function runYtDlpDownload(
 
         proc.on(
             "close",
-            (code) => {
+            code => {
 
 
                 if (code === 0) {
 
                     resolve();
 
-                } else {
+                }
+
+                else {
 
 
                     console.error(
-                        "YT-DLP DOWNLOAD ERROR:",
                         error
                     );
 
@@ -259,7 +297,9 @@ function runYtDlpDownload(
 
     });
 
+
 }
+
 
 
 
@@ -269,10 +309,12 @@ function runYtDlpDownload(
 
 app.post(
     "/extract",
-    async (req, res) => {
+    async(req,res)=>{
 
 
-        const { url } = req.body || {};
+        const {
+            url
+        } = req.body || {};
 
 
 
@@ -343,9 +385,7 @@ app.post(
                 return res.status(413).json({
 
                     error:
-                    `Video too long. Maximum ${
-                        MAX_DURATION_SECONDS / 60
-                    } minutes.`
+                    "Video too long"
 
                 });
 
@@ -364,10 +404,11 @@ app.post(
                 !fs.existsSync(mp3Path)
             ) {
 
+
                 return res.status(500).json({
 
                     error:
-                    "Audio extraction failed."
+                    "Audio file missing"
 
                 });
 
@@ -384,7 +425,7 @@ app.post(
             res.setHeader(
                 "X-Video-Title",
                 encodeURIComponent(
-                    meta.title || "YouTube Track"
+                    meta.title || ""
                 )
             );
 
@@ -416,28 +457,33 @@ app.post(
                 );
 
 
+
             stream.pipe(res);
 
 
 
             stream.on(
                 "close",
-                () => {
+                ()=>{
 
                     fs.unlink(
                         mp3Path,
-                        () => {}
+                        ()=>{}
                     );
 
                 }
             );
 
 
+        }
 
-        } catch (err) {
+
+        catch(err){
 
 
-            console.error(err);
+            console.error(
+                err
+            );
 
 
 
@@ -461,7 +507,7 @@ app.post(
 
 
 // ===============================
-// CORS preflight
+// CORS
 // ===============================
 
 app.options(
@@ -473,15 +519,18 @@ app.options(
             "*"
         );
 
+
         res.setHeader(
             "Access-Control-Allow-Methods",
             "POST,OPTIONS"
         );
 
+
         res.setHeader(
             "Access-Control-Allow-Headers",
             "Content-Type"
         );
+
 
         res.status(200).end();
 
@@ -502,8 +551,10 @@ app.listen(
     PORT,
     "0.0.0.0",
     ()=>{
+
         console.log(
             `Extractor listening on ${PORT}`
         );
+
     }
 );
