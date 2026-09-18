@@ -14,10 +14,9 @@ app.use(express.json());
 const MAX_DURATION_SECONDS = 600;
 
 
-
-// ============================
+// ===============================
 // Health
-// ============================
+// ===============================
 
 app.get("/", (req,res)=>{
 
@@ -29,56 +28,72 @@ app.get("/", (req,res)=>{
 });
 
 
-// Check yt-dlp installed
-app.get("/debug", (req,res)=>{
+// ===============================
+// yt-dlp cookies support
+// ===============================
 
-    const proc = spawn(
-        "yt-dlp",
-        ["--version"]
+function getCookiesFile(){
+
+    if(!process.env.YOUTUBE_COOKIES){
+        return null;
+    }
+
+
+    const file =
+        "/tmp/youtube-cookies.txt";
+
+
+    fs.writeFileSync(
+        file,
+        process.env.YOUTUBE_COOKIES
     );
 
 
-    let output="";
+    return file;
 
-
-    proc.stdout.on(
-        "data",
-        d=>{
-            output += d.toString();
-        }
-    );
-
-
-    proc.on(
-        "close",
-        ()=>{
-            res.json({
-                yt_dlp_version: output.trim()
-            });
-        }
-    );
-
-});
+}
 
 
 
-// ============================
+// ===============================
 // yt-dlp metadata
-// ============================
+// ===============================
 
 function runYtDlpJson(url){
 
     return new Promise((resolve,reject)=>{
 
 
-        const proc = spawn(
-            "yt-dlp",
-            [
-                "-J",
-                "--no-playlist",
-                url
-            ]
-        );
+        const args = [
+            "-J",
+            "--no-playlist"
+        ];
+
+
+        const cookies =
+            getCookiesFile();
+
+
+        if(cookies){
+
+            args.push(
+                "--cookies",
+                cookies
+            );
+
+        }
+
+
+        args.push(url);
+
+
+
+        const proc =
+            spawn(
+                "yt-dlp",
+                args
+            );
+
 
 
         let data="";
@@ -92,7 +107,6 @@ function runYtDlpJson(url){
                 data += d.toString();
             }
         );
-
 
 
         proc.stderr.on(
@@ -112,7 +126,7 @@ function runYtDlpJson(url){
                 if(code !== 0){
 
                     console.error(
-                        "YT-DLP ERROR:",
+                        "YT-DLP METADATA ERROR:",
                         error
                     );
 
@@ -131,12 +145,12 @@ function runYtDlpJson(url){
                         JSON.parse(data)
                     );
 
-
-                }catch(e){
+                }
+                catch(e){
 
                     reject(
                         new Error(
-                            "Invalid JSON from yt-dlp"
+                            "Invalid yt-dlp response"
                         )
                     );
 
@@ -149,40 +163,70 @@ function runYtDlpJson(url){
 
     });
 
-
 }
 
 
 
 
-// ============================
-// yt-dlp download
-// ============================
+// ===============================
+// Download audio
+// ===============================
 
 function runYtDlpDownload(
     url,
     outputTemplate
 ){
 
-
     return new Promise(
         (resolve,reject)=>{
 
 
-            const proc = spawn(
-                "yt-dlp",
-                [
-                    "-x",
-                    "--audio-format",
-                    "mp3",
-                    "--audio-quality",
-                    "5",
-                    "--no-playlist",
-                    "-o",
-                    outputTemplate,
-                    url
-                ]
+            const args = [
+
+                "-x",
+
+                "--audio-format",
+                "mp3",
+
+                "--audio-quality",
+                "5",
+
+                "--no-playlist"
+
+            ];
+
+
+
+            const cookies =
+                getCookiesFile();
+
+
+
+            if(cookies){
+
+                args.push(
+                    "--cookies",
+                    cookies
+                );
+
+            }
+
+
+
+            args.push(
+                "-o",
+                outputTemplate,
+                url
             );
+
+
+
+            const proc =
+                spawn(
+                    "yt-dlp",
+                    args
+                );
+
 
 
             let error="";
@@ -207,11 +251,12 @@ function runYtDlpDownload(
 
                         resolve();
 
-                    }else{
+                    }
+                    else{
 
 
                         console.error(
-                            "DOWNLOAD ERROR:",
+                            "YT-DLP DOWNLOAD ERROR:",
                             error
                         );
 
@@ -230,15 +275,13 @@ function runYtDlpDownload(
         }
     );
 
-
 }
 
 
 
-
-// ============================
+// ===============================
 // Extract
-// ============================
+// ===============================
 
 app.post(
 "/extract",
@@ -259,7 +302,7 @@ async(req,res)=>{
         return res.status(400).json({
 
             error:
-            "A valid YouTube URL is required."
+            "Valid YouTube URL required"
 
         });
 
@@ -268,18 +311,19 @@ async(req,res)=>{
 
 
     const jobId =
-        crypto.randomBytes(8).toString("hex");
+        crypto.randomBytes(8)
+        .toString("hex");
 
 
 
-    const tmpDir =
+    const tmp =
         os.tmpdir();
 
 
 
-    const outputTemplate =
+    const output =
         path.join(
-            tmpDir,
+            tmp,
             `${jobId}.%(ext)s`
         );
 
@@ -302,13 +346,14 @@ async(req,res)=>{
 
         if(
             meta.duration &&
-            meta.duration > MAX_DURATION_SECONDS
+            meta.duration >
+            MAX_DURATION_SECONDS
         ){
 
             return res.status(413).json({
 
                 error:
-                "Video too long."
+                "Video too long"
 
             });
 
@@ -316,35 +361,34 @@ async(req,res)=>{
 
 
 
-
         await runYtDlpDownload(
             url,
-            outputTemplate
+            output
         );
 
 
 
         const files =
-            fs.readdirSync(tmpDir);
+            fs.readdirSync(tmp);
 
 
 
-        const audioFile =
+        const audio =
             files.find(
-                file=>
-                    file.startsWith(jobId)
+                f=>
+                    f.startsWith(jobId)
                     &&
-                    file.endsWith(".mp3")
+                    f.endsWith(".mp3")
             );
 
 
 
-        if(!audioFile){
+        if(!audio){
 
             return res.status(500).json({
 
                 error:
-                "MP3 not created."
+                "Audio file missing"
 
             });
 
@@ -354,8 +398,8 @@ async(req,res)=>{
 
         const audioPath =
             path.join(
-                tmpDir,
-                audioFile
+                tmp,
+                audio
             );
 
 
@@ -401,7 +445,6 @@ async(req,res)=>{
             );
 
 
-
         stream.pipe(res);
 
 
@@ -420,18 +463,18 @@ async(req,res)=>{
 
 
 
-    }catch(err){
+    }
+    catch(err){
 
 
-        console.error(
-            err
-        );
+        console.error(err);
+
 
 
         res.status(500).json({
 
             error:
-            "Failed to extract audio.",
+            "Failed to extract audio",
 
             message:
             err.message
@@ -446,45 +489,9 @@ async(req,res)=>{
 
 
 
-
-// ============================
-// OPTIONS
-// ============================
-
-app.options(
-"/extract",
-(req,res)=>{
-
-
-    res.setHeader(
-        "Access-Control-Allow-Origin",
-        "*"
-    );
-
-
-    res.setHeader(
-        "Access-Control-Allow-Methods",
-        "POST,OPTIONS"
-    );
-
-
-    res.setHeader(
-        "Access-Control-Allow-Headers",
-        "Content-Type"
-    );
-
-
-    res.status(200).end();
-
-
-});
-
-
-
-
-// ============================
+// ===============================
 // Start
-// ============================
+// ===============================
 
 const PORT =
 process.env.PORT || 8080;
