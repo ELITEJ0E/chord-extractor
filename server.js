@@ -361,6 +361,8 @@ app.post(
 
 
 
+        let stage = "metadata";
+
         try {
 
 
@@ -393,6 +395,7 @@ app.post(
 
 
 
+            stage = "download";
             await runYtDlpDownload(
                 url,
                 outputTemplate
@@ -400,6 +403,7 @@ app.post(
 
 
 
+            stage = "audio_file";
             if (
                 !fs.existsSync(mp3Path)
             ) {
@@ -481,21 +485,26 @@ app.post(
         catch(err){
 
 
-            console.error(
-                err
-            );
-
-
-
-            res.status(500).json({
-
-                error:
-                "Failed to extract audio",
-
-                message:
-                err.message
-
-            });
+            const raw = String(err?.message || "Unknown extractor failure");
+            const known = [
+                ["Sign in to confirm", "YOUTUBE_BOT_CHECK", "YouTube requires verification for this server."],
+                ["not a bot", "YOUTUBE_BOT_CHECK", "YouTube requires verification for this server."],
+                ["HTTP Error 403", "YOUTUBE_FORBIDDEN", "YouTube denied the server's download request (403)."],
+                ["HTTP Error 429", "YOUTUBE_RATE_LIMITED", "YouTube is rate-limiting this server (429)."],
+                ["Requested format is not available", "FORMAT_UNAVAILABLE", "yt-dlp could not obtain an audio format."],
+                ["Video unavailable", "VIDEO_UNAVAILABLE", "The selected YouTube video is unavailable."],
+                ["Private video", "PRIVATE_VIDEO", "The selected YouTube video is private."],
+                ["ffmpeg", "AUDIO_CONVERSION_FAILED", "Audio conversion failed; check FFmpeg installation and the Render logs."],
+            ];
+            const match = known.find(([needle]) => raw.toLowerCase().includes(needle.toLowerCase()));
+            const errorCode = match?.[1] || "YTDLP_FAILED";
+            const message = match?.[2] || "Audio extraction failed on Render. Check the backend logs for the yt-dlp error.";
+            console.error("[extract]", { stage, errorCode, raw });
+            if (!res.headersSent) {
+                res.status(502).json({ error: message, code: errorCode, stage });
+            } else {
+                res.destroy(err);
+            }
 
 
         }
