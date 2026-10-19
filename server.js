@@ -72,8 +72,9 @@ function runYtDlpJson(url) {
             "--no-playlist",
 
             "--js-runtimes",
-
-            "deno"
+            "deno",
+            "--remote-components",
+            "ejs:npm"
 
         ];
 
@@ -212,7 +213,9 @@ function runYtDlpDownload(
             "--no-playlist",
 
             "--js-runtimes",
-            "deno"
+            "deno",
+            "--remote-components",
+            "ejs:npm"
 
         ];
 
