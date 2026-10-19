@@ -489,8 +489,8 @@ app.post(
             const known = [
                 ["Sign in to confirm", "YOUTUBE_BOT_CHECK", "YouTube requires verification for this server."],
                 ["not a bot", "YOUTUBE_BOT_CHECK", "YouTube requires verification for this server."],
-                ["HTTP Error 403", "YOUTUBE_FORBIDDEN", "YouTube denied the server's download request (403)."],
-                ["HTTP Error 429", "YOUTUBE_RATE_LIMITED", "YouTube is rate-limiting this server (429)."],
+                ["HTTP Error 429", "YOUTUBE_RATE_LIMITED", "YouTube is rate-limiting this Render server (429). Retrying immediately will not resolve an IP rate limit."],
+                ["HTTP Error 403", "YOUTUBE_FORBIDDEN", "YouTube denied the server's request (403)."],
                 ["Requested format is not available", "FORMAT_UNAVAILABLE", "yt-dlp could not obtain an audio format."],
                 ["Video unavailable", "VIDEO_UNAVAILABLE", "The selected YouTube video is unavailable."],
                 ["Private video", "PRIVATE_VIDEO", "The selected YouTube video is private."],
