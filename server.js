@@ -519,7 +519,6 @@ app.post(
 
         } finally {
             activeVideoRequests.delete(videoId);
-            fs.unlink(mp3Path, () => {});
         }
 
 
