@@ -11,7 +11,6 @@ const app = express();
 app.use(express.json());
 
 
-const MAX_DURATION_SECONDS = 600;
 const RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 let rateLimitedUntil = 0;
 const activeVideoRequests = new Set();
@@ -60,251 +59,45 @@ function getCookieFile() {
 
 
 // ===============================
-// yt-dlp metadata
+// Single-pass extraction
 // ===============================
-
-function runYtDlpJson(url) {
-
+// Fetch metadata and audio in one yt-dlp invocation to reduce requests.
+// Does not bypass YouTube's network or authentication restrictions.
+function runYtDlpExtract(url, outputTemplate) {
     return new Promise((resolve, reject) => {
-
-
         const args = [
-
-            "-J",
-
             "--no-playlist",
-
-            "--js-runtimes",
-
-            "deno"
-
+            "--no-progress",
+            "--js-runtimes", "deno",
+            "--match-filter", "duration <= 600",
+            "-x", "--audio-format", "mp3", "--audio-quality", "5",
+            "--print", "after_move:%(title)j",
+            "--print", "after_move:%(uploader)j",
+            "-o", outputTemplate,
         ];
-
-
-
-        const cookies =
-            getCookieFile();
-
-
-
-        if (cookies) {
-
-            args.push(
-                "--cookies",
-                cookies
-            );
-
-        }
-
-
-
+        const cookies = getCookieFile();
+        if (cookies) args.push("--cookies", cookies);
         args.push(url);
-
-
-
-        const proc =
-            spawn(
-                "yt-dlp",
-                args
-            );
-
-
-
-        let data = "";
-
-        let error = "";
-
-
-
-        proc.stdout.on(
-            "data",
-            chunk => {
-
-                data += chunk.toString();
-
-            }
-        );
-
-
-
-        proc.stderr.on(
-            "data",
-            chunk => {
-
-                error += chunk.toString();
-
-            }
-        );
-
-
-
-        proc.on(
-            "close",
-            code => {
-
-
-                if (code !== 0) {
-
-
-                    console.error(
-                        error
-                    );
-
-
-                    return reject(
-                        new Error(error)
-                    );
-
-                }
-
-
-
+        const proc = spawn("yt-dlp", args);
+        let stdout = "", stderr = "";
+        const timer = setTimeout(() => proc.kill(), 180000);
+        proc.stdout.on("data", chunk => { stdout = (stdout + chunk.toString()).slice(-32768); });
+        proc.stderr.on("data", chunk => { stderr = (stderr + chunk.toString()).slice(-32768); });
+        proc.once("error", err => { clearTimeout(timer); reject(err); });
+        proc.once("close", code => {
+            clearTimeout(timer);
+            if (code !== 0) return reject(new Error(stderr || "yt-dlp failed"));
+            const lines = stdout.trim().split(/\r?\n/);
+            function metadata(value) {
                 try {
-
-                    resolve(
-                        JSON.parse(data)
-                    );
-
-                }
-
-                catch {
-
-                    reject(
-                        new Error(
-                            "Invalid metadata response"
-                        )
-                    );
-
-                }
-
-
+                    const parsed = JSON.parse(value);
+                    return typeof parsed === "string" ? parsed : "";
+                } catch { return ""; }
             }
-        );
-
-
+            resolve({ title: metadata(lines[0]), uploader: metadata(lines[1]) });
+        });
     });
-
 }
-
-
-
-
-// ===============================
-// yt-dlp audio download
-// ===============================
-
-function runYtDlpDownload(
-    url,
-    outputTemplate
-) {
-
-
-    return new Promise((resolve, reject) => {
-
-
-        const args = [
-
-            "-x",
-
-            "--audio-format",
-            "mp3",
-
-            "--audio-quality",
-            "5",
-
-            "--no-playlist",
-
-            "--js-runtimes",
-            "deno"
-
-        ];
-
-
-
-        const cookies =
-            getCookieFile();
-
-
-
-        if (cookies) {
-
-            args.push(
-                "--cookies",
-                cookies
-            );
-
-        }
-
-
-
-        args.push(
-            "-o",
-            outputTemplate,
-            url
-        );
-
-
-
-        const proc =
-            spawn(
-                "yt-dlp",
-                args
-            );
-
-
-
-        let error = "";
-
-
-
-        proc.stderr.on(
-            "data",
-            chunk => {
-
-                error += chunk.toString();
-
-            }
-        );
-
-
-
-        proc.on(
-            "close",
-            code => {
-
-
-                if (code === 0) {
-
-                    resolve();
-
-                }
-
-                else {
-
-
-                    console.error(
-                        error
-                    );
-
-
-                    reject(
-                        new Error(error)
-                    );
-
-                }
-
-
-            }
-        );
-
-
-    });
-
-
-}
-
-
-
 
 // ===============================
 // Extract endpoint
@@ -391,34 +184,7 @@ app.post(
 
 
 
-            const meta =
-                await runYtDlpJson(url);
-
-
-
-            if (
-                meta.duration &&
-                meta.duration >
-                MAX_DURATION_SECONDS
-            ) {
-
-                return res.status(413).json({
-
-                    error:
-                    "Video too long"
-
-                });
-
-            }
-
-
-
-            await runYtDlpDownload(
-                url,
-                outputTemplate
-            );
-
-
+            const meta = await runYtDlpExtract(url, outputTemplate);
 
             if (
                 !fs.existsSync(mp3Path)
