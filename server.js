@@ -12,6 +12,9 @@ app.use(express.json());
 
 
 const MAX_DURATION_SECONDS = 600;
+const RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
+let rateLimitedUntil = 0;
+const activeVideoRequests = new Set();
 
 
 // ===============================
@@ -334,6 +337,23 @@ app.post(
 
 
 
+        const videoId = (() => {
+            try {
+                const parsed = new URL(url);
+                if (!["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"].includes(parsed.hostname)) return null;
+                const value = parsed.hostname === "youtu.be" ? parsed.pathname.slice(1).split("/")[0] : parsed.searchParams.get("v");
+                return /^[A-Za-z0-9_-]{11}$/.test(value || "") ? value : null;
+            } catch { return null; }
+        })();
+        if (!videoId) return res.status(400).json({ error: "Invalid YouTube video URL", code: "INVALID_URL" });
+        if (Date.now() < rateLimitedUntil) {
+            const retryAfter = Math.ceil((rateLimitedUntil - Date.now()) / 1000);
+            res.setHeader("Retry-After", String(retryAfter));
+            return res.status(503).json({ error: "YouTube is rate-limiting this server. Please use Upload Audio, or try again later.", code: "YOUTUBE_RATE_LIMITED", retryAfterSeconds: retryAfter });
+        }
+        if (activeVideoRequests.has(videoId)) return res.status(429).json({ error: "This video is already being processed.", code: "ALREADY_PROCESSING" });
+        activeVideoRequests.add(videoId);
+
         const jobId =
             crypto.randomBytes(8)
             .toString("hex");
@@ -479,25 +499,27 @@ app.post(
 
 
         catch(err){
-
-
+            const detail = String(err?.message || "yt-dlp error");
+            const rateLimited = /HTTP Error 429|Too Many Requests/i.test(detail);
+            if (rateLimited) rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
             console.error(
                 err
             );
 
 
 
-            res.status(500).json({
-
-                error:
-                "Failed to extract audio",
-
-                message:
-                err.message
-
-            });
+            if (!res.headersSent) {
+                if (rateLimited) res.setHeader("Retry-After", "1800");
+                res.status(rateLimited ? 503 : 502).json({
+                    error: rateLimited ? "YouTube is rate-limiting this server. Please use Upload Audio, or try again later." : "YouTube audio extraction failed. Please try an authorized audio upload instead.",
+                    code: rateLimited ? "YOUTUBE_RATE_LIMITED" : "YTDLP_FAILED",
+                });
+            }
 
 
+        } finally {
+            activeVideoRequests.delete(videoId);
+            fs.unlink(mp3Path, () => {});
         }
 
 
