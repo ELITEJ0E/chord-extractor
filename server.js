@@ -34,26 +34,32 @@ app.get("/", (req, res) => {
 // ===============================
 
 function getCookieFile() {
+    const rawCookies = process.env.YOUTUBE_COOKIES?.trim();
+    if (!rawCookies) return null;
 
-    if (!process.env.YOUTUBE_COOKIES) {
+    // Only pass a Netscape cookies.txt export to yt-dlp. Cloud hosts can
+    // auto-generate arbitrary secrets for optional environment variables.
+    // Those must never be mistaken for a cookies file.
+    const lines = rawCookies.split(/\r?\n/);
+    const header = lines[0]?.trim();
+    const validHeader = header === "# Netscape HTTP Cookie File" ||
+        header === "# HTTP Cookie File";
+
+    const cookieLines = lines.filter(line =>
+        line.trim() &&
+        !line.startsWith("#") &&
+        line.split("\t").length === 7
+    );
+
+    if (!validHeader || cookieLines.length === 0) {
+        console.warn("Ignoring YOUTUBE_COOKIES: expected a Netscape cookies.txt export. Remove the variable if not needed.");
         return null;
     }
 
-
-    const cookiePath =
-        "/tmp/youtube-cookies.txt";
-
-
-    fs.writeFileSync(
-        cookiePath,
-        process.env.YOUTUBE_COOKIES
-    );
-
-
+    const cookiePath = "/tmp/youtube-cookies.txt";
+    fs.writeFileSync(cookiePath, rawCookies + "\n", { mode: 0o600 });
     return cookiePath;
-
 }
-
 
 
 // ===============================
