@@ -29,6 +29,12 @@ app.get("/", (req, res) => {
 
 
 
+// Dedicated health endpoint for reverse proxies and sleeping free-tier hosts.
+app.get("/health", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ status: "ok", service: "chord-extractor-backend" });
+});
+
 // ===============================
 // Cookie handling
 // ===============================
